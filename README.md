@@ -73,8 +73,8 @@ tailscale-mcp-agent/
 - [x] **Phase 1:** Foundation - Basic Gradio chat with Claude
 - [x] **Phase 2:** MCP Server - Define tools with MCP
 - [x] **Phase 3:** SSH Connection - Remote command execution
-- [ ] **Phase 4:** Tool Definitions - Whitelisted commands
-- [ ] **Phase 5:** MCP Client - Agent talks MCP
+- [x] **Phase 4:** Tool Definitions - Whitelisted commands
+- [x] **Phase 5:** MCP Client - Agent talks MCP
 - [ ] **Phase 6:** Full Integration - End-to-end flow
 - [ ] **Phase 7:** Configuration - User-friendly setup
 - [ ] **Phase 8:** Security - Hardening and audit
