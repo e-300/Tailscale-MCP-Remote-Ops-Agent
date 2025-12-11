@@ -2,22 +2,42 @@
 
 A proof-of-concept agent that lets you chat with Claude to execute commands on a remote server via SSH and Tailscale, using the Model Context Protocol (MCP).
 
+> **Note:** This is an independent proof-of-concept and **not** an official Tailscale product.
+
+---
+
 ## 🎯 What This Does
 
-Chat with Claude through a local Gradio UI. Claude can execute whitelisted commands on your remote server and return real results. The whole thing is wired together with MCP for clean tool definitions.
+Chat with Claude through a local Gradio UI. Claude can execute **whitelisted** commands on your remote server and return real results. The whole thing is wired together with **MCP** for clean, typed tool definitions.
 
 **Example conversation:**
-```
+
+```text
 You: Check the disk space on my server
 Claude: [executes df -h via SSH]
-       Here's your disk usage:
-       - / is 45% full (23GB used of 50GB)
-       - /home is 78% full...
+        Here's your disk usage:
+        - / is 45% full (23GB used of 50GB)
+        - /home is 78% full...
 ```
 
-## Architecture
+---
 
-```
+## 🧠 How It Works (Claude + MCP + SSH + Tailscale)
+
+1. You talk to Claude via a local **Gradio** chat UI.
+2. Claude calls **MCP tools** (e.g., `server_status`, `list_commands`, `execute_command`) exposed by a local MCP server.
+3. The MCP server uses an async **SSH client** to run **whitelisted** commands on a Tailscale-reachable host.
+4. Results are returned through MCP back to Claude, which explains them in natural language.
+
+Claude never has raw shell access. It can only invoke predefined tools that map to whitelisted commands.
+
+---
+
+## 🗺️ Architecture
+
+### Local Deployment
+
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                 Tailnet                                     │
 │                                                                             │
@@ -39,105 +59,442 @@ Claude: [executes df -h via SSH]
                                └──────────────────┘
 ```
 
-## 🚀 Quick Start
+### Docker Deployment
 
-### Prerequisites
+```text
+┌────────────────────────────────────────────────────────────────────────────────┐
+│                                 Tailnet                                        │
+│                                                                                │
+│  ┌──────────────┐          ┌───────────────────────────────────────────────┐   │
+│  │   Browser    │ ◄───────►│              Docker Host                      │   │
+│  └──────────────┘port:7860 │  ┌─────────────┐      ┌─────────────────┐     │   │
+│                            │  │  tailscale  │      │    mcp-agent    │     │   │
+│                            │  │  (sidecar)  │◄───► │                 │     │   │
+│                            │  │             │shared│  - Gradio UI    │     │   │
+│                            │  │  - VPN      │ net  │  - Claude API   │     │   │
+│                            │  │  - Routes   │      │  - SSH client   │     │   │
+│                            │  └─────────────┘      └────────┬────────┘     │   │
+│                            └────────────────────────────────┼──────────────┘   │
+│                                                             │                  │
+│                                                             │ SSH              │
+│                                                             ▼                  │
+│                                                      ┌──────────────┐          │
+│                                                      │Remote Server │          │
+│                                                      └──────────────┘          │
+└────────────────────────────────────────────────────────────────────────────────┘
+```
 
-- **Python 3.11+**
-- **Tailscale** installed and connected on both machines, both should be in your tailnet
-- **SSH access** to your remote server (key-based auth recommended)
-- **Anthropic API key** ([get one here](https://console.anthropic.com/))
+The Docker setup uses two containers:
 
-### Setup
+* **tailscale**: Sidecar container providing VPN connectivity to your Tailnet.
+* **mcp-agent**: Main application container sharing the Tailscale network namespace.
 
-1. **Clone and setup environment:**
-   ```bash
-   git clone <this-repo>
-   cd tailscale-mcp-agent
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   pip install -r requirements.txt
-   ```
+**Why two containers?**
 
-2. **Configure environment:**
-   ```bash
-   cp .env.example .env
-   ```
-   
-   Blank .env file is provided for you
-   Just fill in your info
-   Edit `.env` with your values:
+1. **Separation of concerns** – Tailscale VPN is isolated from the application.
+2. **Security** – The app container runs as non-root.
+3. **Reusability** – Tailscale container can be shared with other services.
+4. **Updates** – Update Tailscale independently of the application.
+
+---
+
+## 🚀 Deployment Options
+
+There are **two ways** to run this project:
+
+* [Option A: Docker deployment (recommended)](#option-a-docker-deployment-recommended)
+* [Option B: Local Python environment](#option-b-local-python-environment)
+
+Choose **one** and follow it step-by-step.
+
+---
+
+<details id="option-a-docker-deployment-recommended">
+  <summary><h2>Option A: Docker deployment (recommended)</h2></summary>
+
+### 1. Prerequisites
+
+* Docker Engine 20.10+
+* Docker Compose v2.0+
+* A Tailscale account
+* An Anthropic API key
+* SSH access to your remote server (over Tailscale, e.g., `100.x.x.x`)
+
+---
+
+### 2. Clone the repo
+
+```bash
+git clone <repo-url>
+cd tailscale-mcp-agent
+```
+
+---
+
+### 3. Configure environment (.env)
+
+Use the Docker-focused env template:
+
+```bash
+mv .env.docker .env
+nano .env
+```
+
+Set at minimum:
+
+* `ANTHROPIC_API_KEY`
+* `REMOTE_HOST` (e.g., `100.x.x.x`)
+* `REMOTE_USER`
+* `SSH_KEY_PATH` / `SSH_KEY_FILENAME` (for Docker SSH key mounting)
+* Either `TS_AUTHKEY` **or** be ready to do manual auth
+
+The `.env` file explains which values are required and which are optional.
+
+---
+
+### 4. Authenticate with Tailscale
+
+You have two options: **automated (auth key)** or **manual interactive**.
+
+#### 4.1 Automated Tailscale authentication (recommended)
+
+1. Generate an auth key at:
+   [https://login.tailscale.com/admin/settings/keys](https://login.tailscale.com/admin/settings/keys)
+2. Add it to `.env`:
+
    ```env
-   ANTHROPIC_API_KEY=sk-your-key
-   REMOTE_HOST=100.x.x.x          # Your Tailscale IP
-   REMOTE_USER=server-username
-   REMOTE_SSH_KEY_PATH=~/.ssh/id_ed25519
-   REMOTE_SSH_KEY_PASSPHRASE=if-needed-else-leave-blank
-   REMOTE_SSH_PORT=if-needed-else-leave-blank
-
+   TS_AUTHKEY=tskey-auth-xxxxx
    ```
 
-3. **Run the agent:**
-   ```bash
-   python run.py
-   ```
+When you run `docker compose up`, the Tailscale container will auto-auth and join your Tailnet.
 
-4. **Open in browser:**
-   Navigate to `http://localhost:7860`
+#### 4.2 Manual Tailscale authentication
+
+```bash
+# Start only the Tailscale container
+docker compose up -d tailscale
+
+# Trigger interactive auth (one-time)
+docker compose exec tailscale tailscale up
+
+# → Follow the URL printed in the terminal, sign in, and approve the node.
+
+# Verify status
+docker compose exec tailscale tailscale status
+```
+
+Tailscale state is persisted in the container volume until you remove volumes.
+
+---
+
+### 5. Start the agent
+
+```bash
+# Start all services (tailscale + mcp-agent)
+docker compose up -d
+
+# View agent logs
+docker compose logs -f mcp-agent
+```
+
+Once started, open: `http://localhost:7860` in your browser.
+
+---
+
+### 6. SSH key setup options (Docker)
+
+#### Option 1: Mount existing keys
+
+Mount your `~/.ssh` directory (default-style setup):
+
+```yaml
+volumes:
+  - ${SSH_KEY_PATH:-~/.ssh}:/app/ssh-keys:ro
+```
+
+In `.env`:
+
+```env
+SSH_KEY_PATH=~/.ssh
+SSH_KEY_FILENAME=id_ed25519
+```
+
+#### Option 2: Use a specific key file
+
+```bash
+# Create a dedicated keys directory
+mkdir -p ./secrets/ssh
+
+# Copy your key (keep it secure!)
+cp ~/.ssh/id_ed25519 ./secrets/ssh/
+
+# Update .env
+SSH_KEY_PATH=./secrets/ssh
+SSH_KEY_FILENAME=id_ed25519
+```
+
+#### Option 3: Docker secrets (Swarm mode)
+
+For production with Docker Swarm:
+
+```yaml
+secrets:
+  ssh_key:
+    file: ./secrets/id_ed25519
+
+services:
+  mcp-agent:
+    secrets:
+      - ssh_key
+    environment:
+      - REMOTE_SSH_KEY_PATH=/run/secrets/ssh_key
+```
+
+---
+
+### 7. Common Docker commands
+
+```bash
+# Start all containers
+docker compose up -d
+
+# Stop all containers
+docker compose down
+
+# View logs
+docker compose logs -f
+docker compose logs -f mcp-agent
+
+# Rebuild after code changes
+docker compose build --no-cache mcp-agent
+docker compose up -d mcp-agent
+
+# Check Tailscale status
+docker compose exec tailscale tailscale status
+
+# Access agent container shell
+docker compose exec mcp-agent bash
+
+# Test SSH connection from inside container
+docker compose exec mcp-agent python -c "
+import asyncio
+from src.config import SSHConfig
+from src.ssh_client import test_ssh_connection
+config = SSHConfig.from_env()
+print(asyncio.run(test_ssh_connection(config)))
+"
+```
+
+---
+
+### 8. Docker-specific troubleshooting
+
+#### Tailscale won’t connect
+
+```bash
+# Check Tailscale logs
+docker compose logs tailscale
+
+# Verify TUN device exists
+docker compose exec tailscale ls -la /dev/net/tun
+
+# Re-authenticate
+docker compose exec tailscale tailscale up --reset
+```
+
+#### SSH connection fails
+
+```bash
+# Verify key is mounted
+docker compose exec mcp-agent ls -la /app/ssh-keys/
+
+# Check permissions
+docker compose exec mcp-agent stat /app/ssh-keys/id_ed25519
+
+# Test SSH manually (if openssh-client is installed)
+docker compose exec mcp-agent ssh -i /app/ssh-keys/id_ed25519 user@100.x.x.x
+```
+
+#### Can’t reach remote server
+
+```bash
+# Verify Tailscale is connected
+docker compose exec tailscale tailscale status
+
+# Ping remote server
+docker compose exec tailscale ping 100.x.x.x
+
+# Check if agent can reach Tailnet
+docker compose exec mcp-agent ping 100.x.x.x
+```
+
+#### Port 7860 not accessible
+
+```bash
+# Check if port is exposed
+docker compose ps
+
+# Verify Gradio is running
+docker compose logs mcp-agent | grep -i gradio
+
+# Check port binding (container name may differ)
+docker port tailscale-mcp 7860
+```
+
+---
+
+</details>
+
+<details id="option-b-local-python-environment">
+  <summary><h2>Option B: Local Python environment</h2></summary>
+
+### 1. Prerequisites
+
+* Python 3.11+
+* `pip` and `venv`
+* Tailscale running on:
+
+  * Your local machine
+  * The remote server
+* Anthropic API key
+* SSH access to the remote over Tailscale (e.g., `ssh user@100.x.x.x` works)
+
+---
+
+### 2. Clone and set up environment
+
+```bash
+git clone <repo-url>
+cd tailscale-mcp-agent
+
+python3 -m venv venv
+source venv/bin/activate       # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+---
+
+### 3. Configure environment (.env)
+
+```bash
+cp .env.example .env
+nano .env
+```
+
+Example values:
+
+```env
+ANTHROPIC_API_KEY=sk-ant-your-key
+REMOTE_HOST=100.x.x.x
+REMOTE_USER=server-username
+REMOTE_SSH_KEY_PATH=~/.ssh/id_ed25519
+REMOTE_SSH_KEY_PASSPHRASE=optional
+REMOTE_SSH_PORT=22
+```
+
+Ensure:
+
+* You can SSH into the remote using the key/path you configured.
+* Tailscale is connected on both ends (`tailscale status`).
+
+---
+
+### 4. Run the agent
+
+```bash
+python3 run.py
+```
+
+Then open: `http://localhost:7860` in your browser.
+
+---
+
+### 5. Local Python troubleshooting
+
+**“SSH not configured”**
+
+Ensure these are set in `.env`:
+
+* `REMOTE_HOST`
+* `REMOTE_USER`
+* `REMOTE_SSH_KEY_PATH`
+
+**“SSH key not found”**
+
+```bash
+ls -la ~/.ssh/id_ed25519
+```
+
+**“Connection refused”**
+
+1. Verify Tailscale is running: `tailscale status`
+2. Check you can ping the remote: `ping 100.x.x.x`
+3. Verify SSH is running on remote: `ssh user@100.x.x.x`
+
+**“Command not in whitelist”**
+
+* Add the command to `config/commands.yaml`
+* Or use the MCP tool `list_commands` in the UI to see available options.
+
+</details>
+
+---
 
 ## 📖 Usage
 
-### Example Commands
+### Example prompts
 
-Once running, try these prompts:
+Once the agent is running (Docker or local), try:
 
-- **"Check the server status"** - Verifies SSH connectivity
-- **"How much disk space is available?"** - Runs `df -h`
-- **"Show me the memory usage"** - Runs `free -h`
-- **"Give me a system overview"** - Runs multiple commands
-- **"What commands can you run?"** - Lists all whitelisted commands
-- **"Is the docker service running?"** - Checks systemd service
-- **"Check the size of /var/log"** - Runs `du -sh /var/log`
+* **“Check the server status”** – Verifies SSH connectivity
+* **“How much disk space is available?”** – Runs `df -h`
+* **“Show me the memory usage”** – Runs `free -h`
+* **“Give me a system overview”** – Runs multiple commands
+* **“What commands can you run?”** – Lists whitelisted commands
+* **“Is the docker service running?”** – Checks systemd service
+* **“Check the size of /var/log”** – Runs `du -sh /var/log`
 
-### Available Tools
+### Available MCP tools
 
-| Tool | Description |
-|------|-------------|
-| `ping` | Test MCP server connectivity |
-| `server_status` | Check SSH connection status |
-| `list_commands` | Show all available commands |
-| `execute_command` | Run a whitelisted command |
-| `check_disk` | Quick disk space check |
-| `check_memory` | Quick memory check |
-| `check_service` | Check a systemd service |
-| `check_path_size` | Check directory size |
-| `system_overview` | Get comprehensive system info |
+| Tool              | Description                          |
+| ----------------- | ------------------------------------ |
+| `ping`            | Test MCP server connectivity         |
+| `server_status`   | Check SSH connection status          |
+| `list_commands`   | Show all available commands          |
+| `execute_command` | Run a whitelisted command            |
+| `check_disk`      | Quick disk space check               |
+| `check_memory`    | Quick memory check                   |
+| `check_service`   | Check a systemd service              |
+| `check_path_size` | Check directory size                 |
+| `system_overview` | Get comprehensive system information |
 
-### Whitelisted Commands
+### Whitelisted commands
 
 Commands are organized by category:
 
-- **System:** hostname, uptime, whoami, uname, date
-- **Disk:** disk_usage, disk_usage_path, largest_files
-- **Memory:** memory_usage, memory_detailed
-- **Process:** top_processes, top_memory_processes, process_count
-- **Network:** network_interfaces, listening_ports, routing_table
-- **Services:** service_status, failed_services, service_logs
-- **Docker:** docker_ps, docker_stats, docker_logs, docker_images
+* **System:** `hostname`, `uptime`, `whoami`, `uname`, `date`
+* **Disk:** `disk_usage`, `disk_usage_path`, `largest_files`
+* **Memory:** `memory_usage`, `memory_detailed`
+* **Process:** `top_processes`, `top_memory_processes`, `process_count`
+* **Network:** `network_interfaces`, `listening_ports`, `routing_table`
+* **Services:** `service_status`, `failed_services`, `service_logs`
+* **Docker:** `docker_ps`, `docker_stats`, `docker_logs`, `docker_images`
 
 See `config/commands.yaml` for the full list and to add custom commands.
 
+---
+
 ## 🔒 Security
 
-### Design Principles
+### Design principles
 
-1. **Command Whitelisting** - Only pre-approved commands can run
-2. **Parameter Sanitization** - All inputs are sanitized to prevent injection
-3. **Tailscale Encryption** - All traffic between machines is encrypted
-4. **SSH Key Auth** - Password authentication not supported
-5. **No Shell Access** - Commands run in isolation, not interactive shells
+1. **Command whitelisting** – Only pre-approved commands can run.
+2. **Parameter sanitization** – All inputs are sanitized to prevent injection.
+3. **Tailscale encryption** – All traffic between machines is encrypted at the network layer.
+4. **SSH key auth only** – Password authentication is not supported.
+5. **No shell access** – Commands run in isolation, not interactive shells.
 
-### Adding Custom Commands
+### Adding custom commands
 
 Edit `config/commands.yaml`:
 
@@ -150,109 +507,178 @@ Edit `config/commands.yaml`:
     name: The name to greet
 ```
 
-### Security Audit Checklist
+### Security audit checklist
 
 Before deploying:
-- [ ] Review all commands in `config/commands.yaml`
-- [ ] Remove any commands you don't need
-- [ ] Verify SSH key has minimal permissions on remote server
-- [ ] Consider running the agent in a container
-- [ ] Enable Tailscale ACLs to restrict access
-- [ ] Run check_setup.py to verify dependencies are installed correctly
+
+* [ ] Review all commands in `config/commands.yaml`
+* [ ] Remove any commands you don’t need
+* [ ] Verify SSH key has minimal permissions on the remote server
+* [ ] Consider running the agent in a container
+* [ ] Enable Tailscale ACLs to restrict access
+* [ ] Run `check_setup.py` to verify dependencies are installed correctly
+
+---
 
 ## 🏗️ Project Structure
 
-```
+```text
 tailscale-mcp-agent/
 ├── src/
-│   ├── __init__.py
-│   ├── chat_ui.py        # Gradio chat interface + agentic loop
-│   ├── mcp_server.py     # MCP server with tool definitions
-│   ├── mcp_client.py     # MCP client for agent
-│   ├── ssh_client.py     # SSH command execution
-│   └── config.py         # Configuration models
+│   ├── __init__.py        # Package init
+│   ├── chat_ui.py         # Gradio chat interface + agentic loop
+│   ├── mcp_server.py      # MCP server with tool definitions
+│   ├── mcp_client.py      # MCP client for agent
+│   ├── ssh_client.py      # SSH command execution
+│   └── config.py          # Configuration models
 ├── config/
-│   └── commands.yaml     # Whitelisted commands
-├── tests/
-│   └── test_basic.py     # Unit tests
-├── .env.example          # Environment template
-├── .gitignore
+│   └── commands.yaml      # Whitelisted commands
+├── Dockerfile             # Container build
+├── docker-compose.yaml    # Multi-container orchestration
+├── .env.example           # Environment template (local)
+├── .env.docker            # Environment template (Docker)
 ├── requirements.txt
-├── run.py                # Startup script
+├── check_setup.py         # Environment / dependency checks
+├── run.py                 # Startup script
 └── README.md
 ```
 
-## 🧪 Testing
+---
 
-```bash
-# Run all tests
-pytest tests/ -v
+## 🛠️ Development Status
 
-# Run with coverage
-pytest tests/ --cov=src
+* [x] **Phase 1:** Foundation – Basic Gradio chat with Claude
+* [x] **Phase 2:** MCP server – Define tools with MCP
+* [x] **Phase 3:** SSH connection – Remote command execution
+* [x] **Phase 4:** Tool definitions – Whitelisted commands
+* [x] **Phase 5:** MCP client – Agent talks MCP
+* [x] **Phase 6:** Full integration – End-to-end flow
+* [x] **Phase 7:** Configuration – User-friendly setup
+* [x] **Phase 8:** Security – Hardening and audit
+* [x] **Phase 9:** Docker containerization
+* [x] **Phase 10:** Polish – Documentation and UX
 
-# Test SSH connection manually
-python -c "
-import asyncio
-from src.config import SSHConfig
-from src.ssh_client import test_ssh_connection
+---
 
-config = SSHConfig.from_env()
-result = asyncio.run(test_ssh_connection(config))
-print(result)
-"
+## ⚖️ How This POC Compares
+
+| Solution            | AI Agent     | Zero Trust / VPN | SSH Execution |
+| ------------------- | ------------ | ---------------- | ------------- |
+| MCP SSH servers     | ✓            | ✗                | ✓             |
+| Warp Terminal       | ✓            | ✗                | ✓             |
+| Twingate/Cloudflare | ✗ (evolving) | ✓                | ✓             |
+| **This POC**        | ✓            | ✓                | ✓             |
+
+This POC combines:
+
+* AI agent (Claude with MCP tools)
+* Zero-trust overlay (Tailscale)
+* Controlled SSH command execution (whitelist + sanitization)
+
+---
+
+## 🏭 Production Considerations
+
+### 1. Use specific image tags
+
+```yaml
+services:
+  tailscale:
+    image: tailscale/tailscale:v1.56.1  # Pin version
 ```
 
-## 🔧 Troubleshooting
+### 2. Resource limits
 
-### "SSH not configured"
-Make sure all these are set in `.env`:
-- `REMOTE_HOST`
-- `REMOTE_USER`
-- `REMOTE_SSH_KEY_PATH`
-
-### "SSH key not found"
-Check that your key path is correct and the file exists:
-```bash
-ls -la ~/.ssh/id_ed25519
+```yaml
+services:
+  mcp-agent:
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
 ```
 
-### "Connection refused"
-1. Verify Tailscale is running: `tailscale status`
-2. Check you can ping the remote: `ping 100.x.x.x`
-3. Verify SSH is running on remote: `ssh user@100.x.x.x`
+### 3. Logging
 
-### "Command not in whitelist"
-Add the command to `config/commands.yaml` or use `list_commands` to see available options.
+```yaml
+services:
+  mcp-agent:
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+```
 
-## 🛠️ Development
+### 4. Health checks
 
-### Project Phases
+Configure container health checks and monitor with:
 
-- [x] **Phase 1:** Foundation - Basic Gradio chat with Claude
-- [x] **Phase 2:** MCP Server - Define tools with MCP
-- [x] **Phase 3:** SSH Connection - Remote command execution
-- [x] **Phase 4:** Tool Definitions - Whitelisted commands
-- [x] **Phase 5:** MCP Client - Agent talks MCP
-- [x] **Phase 6:** Full Integration - End-to-end flow
-- [x] **Phase 7:** Configuration - User-friendly setup
-- [x] **Phase 8:** Security - Hardening and audit
-- [x] **Phase 9:** Polish - Documentation and UX
+```bash
+docker compose ps
+# or
+docker inspect --format='{{.State.Health.Status}}' mcp-agent
+```
 
-### Adding New Features
+### 5. Reverse proxy (optional)
 
-1. Define new commands in `config/commands.yaml`
-2. Add corresponding tools in `src/mcp_server.py`
-3. Update tool definitions in `src/chat_ui.py`
-4. Add tests in `tests/`
+For HTTPS access, add nginx or Traefik:
+
+```yaml
+services:
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      - mcp-agent
+```
+
+---
+
+## 🔄 Updating
+
+```bash
+# Pull latest images
+docker compose pull
+
+# Rebuild application
+docker compose build --no-cache mcp-agent
+
+# Restart with new images
+docker compose up -d
+```
+
+---
+
+## 🧹 Cleanup
+
+```bash
+# Stop and remove containers
+docker compose down
+
+# Also remove volumes (WARNING: loses Tailscale auth state)
+docker compose down -v
+
+# Remove built images
+docker compose down --rmi local
+```
+
+---
 
 ## 📄 License
 
 MIT
 
+---
+
 ## 🙏 Acknowledgments
 
-- [Anthropic](https://anthropic.com) for Claude
-- [Tailscale](https://tailscale.com) for secure networking
-- [Model Context Protocol](https://modelcontextprotocol.io) for the tool framework
-- [Gradio](https://gradio.app) for the UI
+* [Anthropic](https://anthropic.com) for Claude
+* [Tailscale](https://tailscale.com) for secure networking
+* [Model Context Protocol](https://modelcontextprotocol.io) for the tool framework
+* [Gradio](https://gradio.app) for the UI
