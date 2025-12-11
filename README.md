@@ -1,27 +1,21 @@
-# Tailscale-Secured Remote Node Execution Agent with MCP
+# Tailscale-MCP-Remote-Ops-Agent
+> Secure AI-powered infrastructure management over zero-trust networks
 
-A proof-of-concept agent that lets you chat with Claude to execute commands on a remote server via SSH and Tailscale, using the Model Context Protocol (MCP).
+This is a proof-of-concept agent that lets you chat with Claude to execute commands on a remote server via SSH and Tailscale, using the Model Context Protocol (MCP). This isn't anything close to being production ready this is just a weekend project I built to explore the space of AgentOps.
 
+---
 > **Note:** This is an independent proof-of-concept and **not** an official Tailscale product.
-
 ---
 
-## 🎯 What This Does
+# The Problem
+Managing servers today forces a bad tradeoff: either give AI full shell access which is insane, copy-paste commands manually which is tedious, or build fragile custom integrations. This POC demonstrates a middle path where AI that can execute only whitelisted commands over tailscale's zero trust network, letting you manage infrastructure through natural conversation without sacrificing safety.
 
-Chat with Claude through a local Gradio UI. Claude can execute **whitelisted** commands on your remote server and return real results. The whole thing is wired together with **MCP** for clean, typed tool definitions.
-
-**Example conversation:**
-
-```text
-You: Check the disk space on my server
-Claude: [executes df -h via SSH]
-        Here's your disk usage:
-        - / is 45% full (23GB used of 50GB)
-        - /home is 78% full...
-```
+This POC combines:
+* AI agent (Claude with MCP tools)
+* Zero-trust overlay (Tailscale)
+* Controlled SSH command execution (whitelist + sanitization)
 
 ---
-
 ## 🧠 How It Works (Claude + MCP + SSH + Tailscale)
 
 1. You talk to Claude via a local **Gradio** chat UI.
@@ -30,6 +24,12 @@ Claude: [executes df -h via SSH]
 4. Results are returned through MCP back to Claude, which explains them in natural language.
 
 Claude never has raw shell access. It can only invoke predefined tools that map to whitelisted commands.
+
+
+**Example conversation:**
+
+<img width="2546" height="1538" alt="image" src="https://github.com/user-attachments/assets/f1fd9173-5446-4967-bbcf-5680be5cf2a2" />
+
 
 ---
 
@@ -89,13 +89,6 @@ The Docker setup uses two containers:
 * **tailscale**: Sidecar container providing VPN connectivity to your Tailnet.
 * **mcp-agent**: Main application container sharing the Tailscale network namespace.
 
-**Why two containers?**
-
-1. **Separation of concerns** – Tailscale VPN is isolated from the application.
-2. **Security** – The app container runs as non-root.
-3. **Reusability** – Tailscale container can be shared with other services.
-4. **Updates** – Update Tailscale independently of the application.
-
 ---
 
 ## 🚀 Deployment Options
@@ -105,7 +98,6 @@ There are **two ways** to run this project:
 * Option A: Docker Deployment (Recommended)
 * Option B: Local Python Environment
 
-Choose **one** and follow it step-by-step.
 
 ---
 
@@ -125,7 +117,7 @@ Choose **one** and follow it step-by-step.
 ### 2. Clone the repo
 
 ```bash
-git clone <repo-url>
+git clone git@github.com:e-300/Remote-Execution-Agent.git
 cd tailscale-mcp-agent
 ```
 
@@ -364,7 +356,7 @@ docker port tailscale-mcp 7860
 ### 2. Clone and set up environment
 
 ```bash
-git clone <repo-url>
+git clone git@github.com:e-300/Remote-Execution-Agent.git
 cd tailscale-mcp-agent
 
 python3 -m venv venv
@@ -491,8 +483,7 @@ See `config/commands.yaml` for the full list and to add custom commands.
 1. **Command whitelisting** – Only pre-approved commands can run.
 2. **Parameter sanitization** – All inputs are sanitized to prevent injection.
 3. **Tailscale encryption** – All traffic between machines is encrypted at the network layer.
-4. **SSH key auth only** – Password authentication is not supported.
-5. **No shell access** – Commands run in isolation, not interactive shells.
+4. **No shell access** – Commands run in isolation, not interactive shells.
 
 ### Adding custom commands
 
@@ -557,101 +548,6 @@ tailscale-mcp-agent/
 * [x] **Phase 8:** Security – Hardening and audit
 * [x] **Phase 9:** Docker containerization
 * [x] **Phase 10:** Polish – Documentation and UX
-
----
-
-## ⚖️ How This POC Compares
-
-| Solution            | AI Agent     | Zero Trust / VPN | SSH Execution |
-| ------------------- | ------------ | ---------------- | ------------- |
-| MCP SSH servers     | ✓            | ✗                | ✓             |
-| Warp Terminal       | ✓            | ✗                | ✓             |
-| Twingate/Cloudflare | ✗ (evolving) | ✓                | ✓             |
-| **This POC**        | ✓            | ✓                | ✓             |
-
-This POC combines:
-
-* AI agent (Claude with MCP tools)
-* Zero-trust overlay (Tailscale)
-* Controlled SSH command execution (whitelist + sanitization)
-
----
-
-## 🏭 Production Considerations
-
-### 1. Use specific image tags
-
-```yaml
-services:
-  tailscale:
-    image: tailscale/tailscale:v1.56.1  # Pin version
-```
-
-### 2. Resource limits
-
-```yaml
-services:
-  mcp-agent:
-    deploy:
-      resources:
-        limits:
-          cpus: "1.0"
-          memory: 512M
-```
-
-### 3. Logging
-
-```yaml
-services:
-  mcp-agent:
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-```
-
-### 4. Health checks
-
-Configure container health checks and monitor with:
-
-```bash
-docker compose ps
-# or
-docker inspect --format='{{.State.Health.Status}}' mcp-agent
-```
-
-### 5. Reverse proxy (optional)
-
-For HTTPS access, add nginx or Traefik:
-
-```yaml
-services:
-  nginx:
-    image: nginx:alpine
-    ports:
-      - "443:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./certs:/etc/nginx/certs:ro
-    depends_on:
-      - mcp-agent
-```
-
----
-
-## 🔄 Updating
-
-```bash
-# Pull latest images
-docker compose pull
-
-# Rebuild application
-docker compose build --no-cache mcp-agent
-
-# Restart with new images
-docker compose up -d
-```
 
 ---
 
