@@ -102,14 +102,14 @@ The Docker setup uses two containers:
 
 There are **two ways** to run this project:
 
-* [Option A: Docker deployment (recommended)](#option-a-docker-deployment-recommended)
-* [Option B: Local Python environment](#option-b-local-python-environment)
+* [Option A: Docker deployment (recommended)](option-a)
+* [Option B: Local Python environment](option-b)
 
 Choose **one** and follow it step-by-step.
 
 ---
 
-<details id="option-a-docker-deployment-recommended">
+<details id="option-a">
   <summary><h2>Option A: Docker deployment (recommended)</h2></summary>
 
 ### 1. Prerequisites
@@ -345,7 +345,7 @@ docker port tailscale-mcp 7860
 
 </details>
 
-<details id="option-b-local-python-environment">
+<details id="option-b">
   <summary><h2>Option B: Local Python environment</h2></summary>
 
 ### 1. Prerequisites
