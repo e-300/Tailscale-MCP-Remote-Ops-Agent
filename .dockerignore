@@ -1,0 +1,72 @@
+# Tailscale MCP Agent - Docker Ignore File
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Environment files (contain secrets!)
+.env
+.env.local
+.env.docker
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Test files
+tests/
+pytest_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Documentation (optional - include if you want docs in container)
+# docs/
+
+# Docker files (don't need to copy these into the image)
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Local SSH keys (never include these!)
+*.pem
+*.key
+id_rsa
+id_ed25519
+id_ecdsa
+*.pub
+
+# Logs
+*.log
+logs/
+
+# Misc
+README.md
+LICENSE
+CHANGELOG.md
