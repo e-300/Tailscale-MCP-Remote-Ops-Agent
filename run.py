@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Tailscale MCP Agent - Startup Script
 
@@ -38,16 +37,35 @@ def print_banner():
 
 
 def check_env_file() -> bool:
-    """Check if .env file exists."""
+    """
+    Check if .env file exists OR if running with environment variables.
+    
+    In Docker, environment variables are passed directly, so we don't
+    require a .env file if ANTHROPIC_API_KEY is already set.
+    """
     env_path = Path(__file__).parent / ".env"
-    if not env_path.exists():
-        print("❌ .env file not found!")
-        print()
-        print("   Please create a .env file with your configuration:")
-        print("   cp .env.example .env")
-        print("   Then edit .env with your values.")
-        return False
-    return True
+    
+    # If .env exists, use it
+    if env_path.exists():
+        return True
+    
+    # If running in Docker or env vars are already set, that's fine too
+    if os.getenv("ANTHROPIC_API_KEY"):
+        print("   ℹ️  No .env file found, using environment variables")
+        return True
+    
+    # Neither .env nor environment variables found
+    print("❌ Configuration not found!")
+    print()
+    print("   Option 1: Create a .env file:")
+    print("   cp .env.example .env")
+    print("   Then edit .env with your values.")
+    print()
+    print("   Option 2: Set environment variables directly:")
+    print("   export ANTHROPIC_API_KEY=sk-ant-...")
+    print("   export REMOTE_HOST=100.x.x.x")
+    print("   export REMOTE_USER=your-user")
+    return False
 
 
 def check_anthropic_key() -> bool:
@@ -56,7 +74,7 @@ def check_anthropic_key() -> bool:
     if not key:
         print("❌ ANTHROPIC_API_KEY not set!")
         print()
-        print("   Add your API key to .env:")
+        print("   Add your API key to .env or environment:")
         print("   ANTHROPIC_API_KEY=sk-ant-...")
         return False
     
@@ -127,7 +145,7 @@ def main():
     """Main entry point."""
     print_banner()
     
-    # Load environment
+    # Load environment from .env file if it exists
     load_dotenv()
     
     print("Checking configuration...\n")
@@ -137,7 +155,7 @@ def main():
     if not env_ok:
         sys.exit(1)
     
-    # Reload after confirming .env exists
+    # Reload after confirming .env exists (if it does)
     load_dotenv(override=True)
     
     api_ok = check_anthropic_key()
