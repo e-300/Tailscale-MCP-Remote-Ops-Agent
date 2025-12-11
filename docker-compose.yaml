@@ -1,0 +1,127 @@
+# Tailscale MCP Agent - Docker Compose Configuration
+#
+# This sets up:
+#   1. tailscale - Sidecar container for Tailscale VPN connectivity
+#   2. mcp-agent - Main application container
+#
+# Usage:
+#   docker-compose up -d
+#   docker-compose logs -f mcp-agent
+#
+# First-time Tailscale setup:
+#   docker-compose up -d tailscale
+#   docker-compose exec tailscale tailscale up
+#   # Authenticate via the URL provided
+#   docker-compose up -d mcp-agent
+
+
+services:
+  # ===========================================================================
+  # Tailscale Sidecar
+  # ===========================================================================
+  # Provides VPN connectivity to your Tailnet
+  # The mcp-agent container shares this network namespace
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: tailscale-mcp
+    hostname: mcp-agent  # This will be the hostname on your Tailnet
+    restart: unless-stopped
+    
+    # Required capabilities for VPN
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    
+    # Required for TUN device
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    
+    volumes:
+      # Persist Tailscale state (authentication, keys)
+      - tailscale-state:/var/lib/tailscale
+      # Socket for other containers to use Tailscale CLI
+      - tailscale-socket:/var/run/tailscale
+    
+    environment:
+      # Auth key for automated login (optional - generate at https://login.tailscale.com/admin/settings/keys)
+      # If not set, you'll need to run `docker-compose exec tailscale tailscale up` manually
+      - TS_AUTHKEY=${TS_AUTHKEY:-}
+      # Store state in the volume
+      - TS_STATE_DIR=/var/lib/tailscale
+      # Enable userspace networking (more compatible, no kernel module needed)
+      - TS_USERSPACE=false
+      # Extra args for tailscale up
+      - TS_EXTRA_ARGS=--accept-routes --accept-dns=false
+    
+    # Expose Gradio port (traffic comes through Tailscale container)
+    ports:
+      - "7860:7860"
+    
+    healthcheck:
+      test: ["CMD", "tailscale", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ===========================================================================
+  # MCP Agent Application
+  # ===========================================================================
+  mcp-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mcp-agent
+    restart: unless-stopped
+    
+    # Share network namespace with Tailscale container
+    # This gives the agent direct access to Tailnet IPs
+    network_mode: "service:tailscale"
+    
+    # Wait for Tailscale to be ready
+    depends_on:
+      tailscale:
+        condition: service_healthy
+    
+    volumes:
+      # Mount SSH keys (read-only for security)
+      - ${SSH_KEY_PATH:-~/.ssh}:/app/ssh-keys:ro
+      # Optional: mount custom commands config
+      - ./config:/app/config:ro
+    
+    environment:
+      # Anthropic API
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-sonnet-4-20250514}
+      
+      # Remote server configuration
+      - REMOTE_HOST=${REMOTE_HOST}
+      - REMOTE_USER=${REMOTE_USER}
+      - REMOTE_SSH_PORT=${REMOTE_SSH_PORT:-22}
+      
+      # SSH key path inside container
+      - REMOTE_SSH_KEY_PATH=/app/ssh-keys/${SSH_KEY_FILENAME:-id_ed25519}
+      - REMOTE_SSH_KEY_PASSPHRASE=${REMOTE_SSH_KEY_PASSPHRASE:-}
+      
+      # Gradio settings
+      - GRADIO_SERVER_NAME=0.0.0.0
+      - GRADIO_SERVER_PORT=7860
+    
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7860/')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+# ===========================================================================
+# Volumes
+# ===========================================================================
+volumes:
+  # Persist Tailscale authentication state
+  tailscale-state:
+    driver: local
+  
+  # Tailscale socket for CLI access
+  tailscale-socket:
+    driver: local
