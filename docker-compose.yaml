@@ -22,15 +22,17 @@ services:
   # Provides VPN connectivity to your Tailnet
   # The mcp-agent container shares this network namespace
   tailscale:
-    image: tailscale/tailscale:latest
+    image: tailscale/tailscale:v1.90.9
     container_name: tailscale-mcp
     hostname: mcp-agent  # This will be the hostname on your Tailnet
+    logging: 
+      driver: "none"
     restart: unless-stopped
     
     # Required capabilities for VPN
     cap_add:
       - NET_ADMIN
-      - SYS_MODULE
+
     
     # Required for TUN device
     devices:
@@ -85,9 +87,12 @@ services:
     
     volumes:
       # Mount SSH keys (read-only for security)
-      - ${SSH_KEY_PATH:-~/.ssh}:/app/ssh-keys:ro
+      - ${SSH_KEY_PATH:-~/.ssh/id_ed25519}:/app/ssh-keys/id_ed25519:ro
       # Optional: mount custom commands config
       - ./config:/app/config:ro
+      # Mounting known hosts 
+      - ${SSH_KNOWN_HOSTS_PATH:-~/.ssh/known_hosts}:/app/ssh-keys/known_hosts:ro
+
     
     environment:
       # Anthropic API
