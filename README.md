@@ -106,7 +106,7 @@ There are **two ways** to run this project:
 ---
 
 <details>
-  <summary><h2>Option A: Docker deployment (recommended)</h2></summary>
+  <summary><h2>Docker deployment (recommended)</h2></summary>
 
 ### 1. Prerequisites
 
@@ -342,7 +342,7 @@ docker port tailscale-mcp 7860
 </details>
 
 <details>
-  <summary><h2>Option B: Local Python environment</h2></summary>
+  <summary><h2>Python Virtual Environment</h2></summary>
 
 ### 1. Prerequisites
 
