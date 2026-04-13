@@ -99,8 +99,8 @@ The Docker setup uses two containers:
 
 There are **two ways** to run this project:
 
-* Option A: Docker Deployment (Recommended)
-* Option B: Local Python Environment
+* Docker Deployment (Recommended)
+* Python Virtual Environment
 
 
 ---
