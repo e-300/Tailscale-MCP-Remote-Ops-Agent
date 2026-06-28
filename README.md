@@ -1,7 +1,7 @@
-# Tailscale-MCP-Remote-Ops-Agent
+# Secure-Remote-Ops-Agent
 > Secure AI-powered infrastructure management over zero-trust networks
 
-This is a proof-of-concept agent that lets you chat with Claude to execute commands on a remote server via SSH and Tailscale, using MCP. It isn’t production-ready more of a personal POC I hacked together over a few days to explore the AgentOps space.
+This is a proof-of-concept agent that lets you chat with Claude to execute commands on a remote server via SSH and Tailscale (vpn mesh), using MCP. It isn’t production-ready more of a personal POC I hacked together over a few days to explore the AgentOps space.
 
 ---
 > **Note:** This is an independent proof-of-concept and **not** an official Tailscale product.
